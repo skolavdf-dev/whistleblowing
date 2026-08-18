@@ -1,0 +1,380 @@
+/* Design tokeny dle .inspiration/design/docs/DESIGN.md */
+:root {
+    --brand-yellow-1: #ffd400;
+    --brand-yellow-2: #ffea80;
+    --brand-blue-1: #41d7ff;
+    --brand-blue-2: #00c0f3;
+    --brand-green-1: #c2dd78;
+    --brand-green-2: #a6ce39;
+
+    --bg-top: #003b4b;
+    --bg-bottom: #006783;
+    --panel-bg: #001b2273;
+    --text: #ffffff;
+    --muted: #ffffff8c;
+    --accent: var(--brand-blue-1);
+
+    --success: #a6ce39;
+    --info: #41d7ff;
+    --warning: #ffd400;
+    --danger: #ef4444;
+
+    --button-primary-bg: #0083a6;
+    --button-primary-hover-bg: #b29400;
+    --button-secondary-bg: #ffffff14;
+
+    --form-input-bg: #ffffff;
+    --form-input-text: #1a1a1a;
+    --form-input-border: transparent;
+
+    --radius-sm: 4px;
+    --radius-md: 4px;
+    --radius-lg: 0px;
+    --radius-xl: 0px;
+    --radius-full: 9999px;
+
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 16px;
+    --space-lg: 24px;
+    --space-xl: 32px;
+    --space-xxl: 48px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { min-height: 100%; }
+
+body {
+    background: linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+    background-attachment: fixed;
+    color: var(--text);
+    font-family: 'Raleway', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-weight: 400;
+    font-size: 1rem;
+    line-height: 1.6;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+}
+
+.container {
+    width: min(720px, 100% - 2rem);
+    margin-inline: auto;
+}
+
+/* ── Header ── */
+header {
+    padding: var(--space-lg) 0 var(--space-md);
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    text-decoration: none;
+}
+
+.brand-logo {
+    width: 44px;
+    height: 38px;
+    flex-shrink: 0;
+}
+
+.brand-text {
+    font-family: 'Raleway', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.35;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.brand-text span { color: var(--brand-blue-1); }
+
+main {
+    flex: 1;
+    padding: var(--space-lg) 0 var(--space-xxl);
+}
+
+footer {
+    padding: var(--space-lg) 0;
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
+footer a { color: var(--muted); }
+footer a:hover { color: var(--text); }
+
+/* ── Typography ── */
+h1 {
+    font-family: 'Raleway', sans-serif;
+    font-size: 2.25rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin-bottom: var(--space-md);
+}
+
+h2 {
+    font-family: 'Raleway', sans-serif;
+    font-size: 1.35rem;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--text);
+    margin-bottom: var(--space-sm);
+}
+
+p { margin-bottom: var(--space-md); }
+p:last-child { margin-bottom: 0; }
+
+.lead {
+    font-size: 1.1rem;
+    font-weight: 200;
+    line-height: 1.7;
+    color: var(--text);
+}
+
+.muted { color: var(--muted); font-size: 0.9rem; }
+
+/* Inline odkazy: žlutá, bez podtržení, podtržení + světlejší žlutá na hover */
+a {
+    color: var(--brand-yellow-1);
+    text-decoration: none;
+}
+a:hover {
+    color: var(--brand-yellow-2);
+    text-decoration: underline;
+}
+
+/* Seznamy se šipkovou odrážkou z loga (žlutá) */
+.info-list {
+    list-style: none;
+    margin: var(--space-md) 0;
+}
+.info-list li {
+    position: relative;
+    padding-left: 1.4rem;
+    margin-bottom: var(--space-sm);
+    color: var(--text);
+}
+.info-list li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.4em;
+    width: 10px;
+    height: 10px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='0,0 100,50 0,100' fill='%23ffd400'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-size: contain;
+}
+
+/* ── Rozbalovací panel s podrobnostmi (bez JS, nativní <details>) ── */
+.info-details {
+    margin-top: var(--space-lg);
+}
+
+.info-details summary {
+    cursor: pointer;
+    list-style: none;
+    font-weight: 600;
+    color: var(--brand-yellow-1);
+    padding: 0.6rem 0;
+    user-select: none;
+}
+.info-details summary::-webkit-details-marker { display: none; }
+
+.info-details summary::before {
+    content: "▸ ";
+    display: inline-block;
+    transition: transform .15s;
+}
+.info-details[open] summary::before {
+    transform: rotate(90deg);
+}
+
+.info-details summary:hover { color: var(--brand-yellow-2); }
+
+.info-details-body {
+    padding: var(--space-md) 0 0 var(--space-md);
+    border-left: 2px solid var(--brand-yellow-1);
+    margin-top: var(--space-sm);
+}
+
+.info-details-body h3 {
+    font-family: 'Raleway', sans-serif;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-top: var(--space-lg);
+    margin-bottom: var(--space-sm);
+}
+.info-details-body h3:first-child { margin-top: 0; }
+
+.info-details-body .info-list { margin: 0 0 var(--space-md); }
+
+/* ── Panel (glassmorphism) ── */
+.panel {
+    background: var(--panel-bg);
+    border: 1px solid transparent;
+    border-radius: var(--radius-xl);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: var(--space-xl);
+}
+
+.panel + .panel { margin-top: var(--space-lg); }
+
+/* ── Formulář ── */
+.form-group { margin-bottom: var(--space-md); }
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-md);
+}
+
+@media (min-width: 640px) {
+    .form-row { grid-template-columns: 1fr 1fr; }
+    .form-row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+}
+
+label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: var(--space-xs);
+}
+
+.label-optional {
+    font-weight: 400;
+    color: var(--muted);
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="tel"],
+textarea {
+    width: 100%;
+    background: var(--form-input-bg);
+    color: var(--form-input-text);
+    border: 1px solid var(--form-input-border);
+    border-radius: var(--radius-md);
+    font-family: inherit;
+    font-size: 0.95rem;
+    padding: 0.65rem 0.85rem;
+    transition: box-shadow .15s;
+    resize: vertical;
+}
+
+input::placeholder, textarea::placeholder { color: #6b6b6b; }
+
+input:focus, textarea:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--brand-blue-1);
+}
+
+textarea { min-height: 180px; }
+
+.field-hint {
+    margin-top: var(--space-xs);
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+/* Honeypot pole – skryté před lidmi, dostupné botům, mimo dosah čteček obrazovky */
+.hp-field {
+    position: absolute;
+    left: -9999px;
+    top: -9999px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+
+/* ── Tlačítka ── */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-sm);
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 0.75rem 1.5rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background .15s, border-color .15s, color .15s;
+}
+
+.btn:hover { text-decoration: none; }
+
+.btn-primary {
+    background: var(--button-primary-bg);
+    color: var(--text);
+}
+.btn-primary:hover { background: var(--button-primary-hover-bg); }
+
+.btn-secondary {
+    background: var(--button-secondary-bg);
+    color: var(--text);
+}
+.btn-secondary:hover { background: #ffffff26; }
+
+.btn-accent {
+    background: transparent;
+    border-color: var(--brand-yellow-1);
+    color: var(--brand-yellow-1);
+}
+.btn-accent:hover { background: var(--brand-yellow-1); color: #1a1a1a; }
+
+.btn-block { width: 100%; }
+
+/* ── Alerty ── */
+.alert {
+    border-radius: var(--radius-sm);
+    padding: 0.9rem 1.1rem;
+    margin-bottom: var(--space-md);
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.alert-success { background: rgba(166, 206, 57, 0.16); color: var(--brand-green-1); }
+.alert-error   { background: rgba(239, 68, 68, 0.16);  color: #ff9d9d; }
+.alert-error ul { margin: var(--space-xs) 0 0 1.1rem; }
+
+/* ── Captcha ── */
+.captcha-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+}
+
+.captcha-question {
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.captcha-row input[type="text"] { width: 6rem; flex: none; }
+
+/* ── Detail patička formuláře ── */
+.form-footer {
+    margin-top: var(--space-lg);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+}
+.form-footer .form-group { margin-bottom: 0; }

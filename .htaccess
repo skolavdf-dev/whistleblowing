@@ -1,0 +1,54 @@
+# ─── Základní nastavení ─────────────────────────────────────────────────────
+DirectoryIndex index.php
+Options -Indexes -MultiViews -ExecCGI
+ServerSignature Off
+
+# ─── Vynucení HTTPS ─────────────────────────────────────────────────────────
+# Nutné i proto, aby prohlížeč vůbec dostal hlavičku Strict-Transport-Security,
+# kterou index.php posílá jen když už komunikace přes HTTPS běží.
+# Pokud doména ještě nemá certifikát, tento blok dočasně zakomentujte.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTPS} off
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+    # vendor/ je vygenerovaný composerem (viz .gitignore) — nemá vlastní
+    # .htaccess, protože by se ztrácel při každém "composer install".
+    # Blokujeme ho proto centrálně odsud.
+    RewriteRule ^vendor/ - [F,L]
+</IfModule>
+
+# ─── Zákaz přímého přístupu ke konfiguraci a metadatům projektu ────────────
+# config.local.php obsahuje SMTP heslo a tajný klíč — i kdyby byl PHP na
+# serveru někdy špatně nastavený (servíroval by .php jako čistý text místo
+# spuštění), tento blok zabrání jeho stažení prohlížečem.
+<FilesMatch "^(config.*\.php|composer\.(json|lock))$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Skryté soubory (.git, .env, .htaccess samotné, .gitignore…)
+<FilesMatch "^\.">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# ─── Bezpečnostní hlavičky pro staticky servírované soubory ────────────────
+# index.php si hlavičky nastavuje sám v PHP (viz kapitola Bezpečnost
+# v README.md) — toto pokrývá soubory, které Apache servíruje přímo
+# a přes index.php vůbec neprojdou (CSS, fonty).
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set Referrer-Policy "no-referrer"
+</IfModule>

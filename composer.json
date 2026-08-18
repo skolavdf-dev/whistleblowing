@@ -1,0 +1,13 @@
+{
+    "name": "skolavdf/whistleblowing",
+    "description": "Anonymní whistleblowingový formulář VOŠ, SPŠ a SOŠ Varnsdorf",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.1",
+        "phpmailer/phpmailer": "^7.1"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

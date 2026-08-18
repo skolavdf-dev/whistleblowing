@@ -1,0 +1,15 @@
+# Závislosti (instalují se přes composer install)
+/vendor/
+
+# Lokální konfigurace s citlivými údaji (SMTP heslo, tajný klíč) – NIKDY necommitovat
+/config.local.php
+
+# Dočasná úložiště (rate limit apod.)
+/storage/*
+!/storage/.gitkeep
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
