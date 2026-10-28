@@ -2,28 +2,26 @@
 /**
  * Zkopírujte jako config.local.php a doplňte hodnoty.
  * Soubor config.local.php NIKDY necommitujte (je v .gitignore).
+ *
+ * Obsahuje JEN tajné a provozní hodnoty. Adresát, odesílatel a SMTP server
+ * jsou veřejné a patří do config.public.php — zde je uvádět nesmíte
+ * (aplikace by se nespustila).
+ *
+ * Doporučení: uložte skutečný soubor MIMO DocumentRoot a jeho cestu předejte
+ * proměnnou prostředí WB_CONFIG (např. SetEnv WB_CONFIG /cesta/mimo/web/wb.php,
+ * na IIS v nastavení aplikace/FastCGI).
  */
 return [
     // Tajný klíč pro podepisování anti-spam tokenů (HMAC).
     // Vygenerujte např. příkazem: php -r "echo bin2hex(random_bytes(32));"
     'app_secret' => 'ZDE_VLOZIT_NAHODNY_TAJNY_RETEZEC',
 
-    // Adresa, na kterou se doručují hlášení.
-    'report_to' => 'whistleblowing@skolavdf.cz',
+    // Přihlášení k SMTP. Přihlašovací jméno je volitelné: pokud se liší od
+    // adresy odesílatele (smtp_from), uveďte ho zde, jinak se použije smtp_from.
+    'smtp_user' => 'SMTP_UZIVATEL',
+    'smtp_pass' => 'SMTP_HESLO',
 
-    // Odkaz na veřejné úložiště se zdrojovým kódem aplikace (transparentnost).
-    'github_url' => 'https://github.com/skolavdf-dev/whistleblowing',
-
-    // SMTP konfigurace
-    'smtp_host' => 'smtp.forpsi.com',
-    'smtp_port' => 587,
-    'smtp_user' => 'mailer@skolavdf.cz',
-    'smtp_pass' => 'HESLO',
-    'smtp_from' => 'mailer@skolavdf.cz',
-    'smtp_from_name' => 'Whistleblowing VDF',
-    'smtp_secure' => 'tls',
-
-    // Volitelné přepsání limitů (viz config.php pro výchozí hodnoty)
-    // 'rate_limit_max'    => 5,
-    // 'rate_limit_window' => 3600,
+    // Volitelné
+    // 'storage_dir'    => '/cesta/mimo/web/wb-storage', // zapisovatelný adresář (mimo DocumentRoot)
+    // 'rate_limit_max' => 30,                           // hlášení za hodinu celkem (bez ohledu na IP)
 ];

@@ -11,9 +11,9 @@ declare(strict_types=1);
  *
  * Bezpečnostní opatření v tomto souboru:
  *   - žádné session/cookies → nic, co by šlo použít ke sledování návštěvníka
- *   - žádné logování IP adresy (ani v aplikačním kódu, viz includes/helpers.php)
+ *   - aplikace s IP adresou návštěvníka vůbec nepracuje (ani log, ani hash)
  *   - striktní bezpečnostní hlavičky (CSP, žádné inline skripty, no-referrer)
- *   - HMAC podepsaná anti-spam captcha + honeypot + jemný rate limit
+ *   - HMAC podepsaná jednorázová captcha + honeypot + globální rate limit
  *   - veškerý výstup do HTML prochází přes e() (ochrana proti XSS)
  *   - PHPMailer používá parametrizované API (addAddress/setFrom), žádné
  *     ruční skládání hlaviček → ochrana proti header/SMTP injection
@@ -68,8 +68,16 @@ header(
     "upgrade-insecure-requests"
 );
 
+function sent_redirect(): never
+{
+    header('Location: index.php?odeslano=1', true, 303);
+    exit;
+}
+
 $errors = [];
-$sent   = false;
+// Po úspěšném odeslání se přesměrujeme (303) na ?odeslano, aby obnovení stránky
+// neodeslalo hlášení znovu. Adresa žádná data neobsahuje.
+$sent   = $_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['odeslano']);
 $isSpam = false;
 
 // Hodnoty pro znovu-vyplnění formuláře při chybě (nikdy needitujeme honeypot/captcha).
@@ -81,57 +89,74 @@ $in = [
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $in['message'] = clean_message((string) ($_POST['message'] ?? ''));
-    $in['name']    = clean_line((string) ($_POST['name'] ?? ''));
-    $in['phone']   = clean_line((string) ($_POST['phone'] ?? ''));
-    $in['email']   = clean_line((string) ($_POST['email'] ?? ''));
+    // Pole musí být řetězce (message[]=… apod. se odmítne) a platné UTF-8.
+    $fields = [];
+    foreach (['message', 'name', 'phone', 'email', 'company', 'num1', 'num2', 'ts', 'nonce', 'sig', 'captcha_answer'] as $key) {
+        $fields[$key] = post_string($key);
+    }
+    $inputOk = !in_array(null, $fields, true);
+    foreach ($fields as $value) {
+        if ($value !== null && !is_utf8($value)) {
+            $inputOk = false;
+        }
+    }
+
+    $in['message'] = $inputOk ? clean_message($fields['message']) : '';
+    $in['name']    = $inputOk ? clean_line($fields['name']) : '';
+    $in['phone']   = $inputOk ? clean_line($fields['phone']) : '';
+    $in['email']   = $inputOk ? clean_line($fields['email']) : '';
 
     // Honeypot — skryté pole, které vyplňují jen boti. Člověk ho nikdy neuvidí.
-    $isSpam = trim((string) ($_POST['company'] ?? '')) !== '';
+    $isSpam = $inputOk && trim($fields['company']) !== '';
 
-    // Jemný rate limit dle salted hashe IP adresy (viz includes/helpers.php).
-    $withinRateLimit = check_rate_limit();
-
-    // Anti-spam captcha (stateless, HMAC podepsaná — viz includes/helpers.php).
-    $captchaOk = isset($_POST['num1'], $_POST['num2'], $_POST['ts'], $_POST['sig'], $_POST['captcha_answer'])
-        && ctype_digit((string) $_POST['num1'])
-        && ctype_digit((string) $_POST['num2'])
-        && ctype_digit((string) $_POST['ts'])
+    // Anti-spam captcha (stateless, HMAC podepsaná, jednorázová — viz includes/helpers.php).
+    $captchaOk = $inputOk
+        && ctype_digit($fields['num1'])
+        && ctype_digit($fields['num2'])
+        && ctype_digit($fields['ts'])
         && captcha_verify(
-            (int) $_POST['num1'],
-            (int) $_POST['num2'],
-            (int) $_POST['ts'],
-            (string) $_POST['sig'],
-            (string) $_POST['captcha_answer']
+            (int) $fields['num1'],
+            (int) $fields['num2'],
+            (int) $fields['ts'],
+            $fields['nonce'],
+            $fields['sig'],
+            $fields['captcha_answer']
         );
 
     if (!$isSpam) {
-        if (!$withinRateLimit) {
-            $errors[] = 'Z vaší sítě přišlo v krátké době příliš mnoho žádostí. Zkuste to prosím později.';
+        if (!$inputOk) {
+            $errors[] = 'Formulář obsahuje neplatná data. Zkuste to prosím znovu.';
         }
         if (!$captchaOk) {
             $errors[] = 'Ověřovací otázka nebyla vyplněna správně nebo formulář vypršel. Zkuste to prosím znovu.';
         }
-        if ($in['message'] === '') {
-            $errors[] = 'Napište prosím text hlášení.';
-        } elseif (mb_strlen($in['message']) > MAX_MESSAGE_LENGTH) {
-            $errors[] = 'Text hlášení je příliš dlouhý (maximálně ' . MAX_MESSAGE_LENGTH . ' znaků).';
+        if ($inputOk) {
+            if ($in['message'] === '') {
+                $errors[] = 'Napište prosím text hlášení.';
+            } elseif (mb_strlen($in['message']) > MAX_MESSAGE_LENGTH) {
+                $errors[] = 'Text hlášení je příliš dlouhý (maximálně ' . MAX_MESSAGE_LENGTH . ' znaků).';
+            }
+            if (mb_strlen($in['name']) > MAX_NAME_LENGTH) {
+                $errors[] = 'Jméno je příliš dlouhé.';
+            }
+            if ($in['phone'] !== '' && (mb_strlen($in['phone']) > MAX_PHONE_LENGTH || !preg_match('/^[0-9+\-\s()]+$/u', $in['phone']))) {
+                $errors[] = 'Telefonní číslo obsahuje nepovolené znaky.';
+            }
+            if ($in['email'] !== '' && !filter_var($in['email'], FILTER_VALIDATE_EMAIL)) {
+                $errors[] = 'Zadaný e-mail není platná e-mailová adresa.';
+            }
         }
-        if (mb_strlen($in['name']) > MAX_NAME_LENGTH) {
-            $errors[] = 'Jméno je příliš dlouhé.';
-        }
-        if ($in['phone'] !== '' && (mb_strlen($in['phone']) > MAX_PHONE_LENGTH || !preg_match('/^[0-9+\-\s()]+$/u', $in['phone']))) {
-            $errors[] = 'Telefonní číslo obsahuje nepovolené znaky.';
-        }
-        if ($in['email'] !== '' && !filter_var($in['email'], FILTER_VALIDATE_EMAIL)) {
-            $errors[] = 'Zadaný e-mail není platná e-mailová adresa.';
+        // Globální limit se počítá až pro hlášení, která by se opravdu odeslala —
+        // chybné pokusy ani boti ho nevyčerpají.
+        if ($errors === [] && !check_rate_limit()) {
+            $errors[] = 'Formulář je teď přetížený. Zkuste to prosím později.';
         }
     }
 
     if ($errors === []) {
         if ($isSpam) {
             // Botovi předstíráme úspěch, ale zprávu neposíláme.
-            $sent = true;
+            sent_redirect();
         } else {
             $bodyLines   = [];
             $bodyLines[] = 'Zpráva:';
@@ -158,6 +183,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $mail->Password   = SMTP_PASS;
                 $mail->SMTPSecure = SMTP_SECURE;
                 $mail->CharSet    = 'UTF-8';
+                harden_mail($mail, MAIL_DOMAIN);
 
                 $mail->setFrom(SMTP_FROM, SMTP_FROM_NAME);
                 $mail->addAddress(REPORT_TO_EMAIL);
@@ -173,10 +199,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $mail->AltBody = $plainBody;
 
                 $mail->send();
-                $sent = true;
             } catch (PHPMailerException $e) {
-                // Chybu nezobrazujeme s detaily SMTP serveru (mohly by unikat interní info).
+                // Návštěvníkovi chybu nezobrazujeme (mohla by prozradit interní info).
+                // Správce se ale musí dozvědět, že hlášení nedoputovala — do logu jde jen
+                // obecná zpráva, nikdy obsah hlášení ani údaje odesílatele.
+                error_log('whistleblowing: odeslání e-mailu selhalo (' . get_class($e) . ')');
                 $errors[] = 'Odeslání se bohužel nezdařilo. Zkuste to prosím později.';
+            }
+            if ($errors === []) {
+                sent_redirect();
             }
         }
     }
@@ -226,7 +257,7 @@ $captcha = captcha_generate();
         <a href="mailto:<?= e(REPORT_TO_EMAIL) ?>"><?= e(REPORT_TO_EMAIL) ?></a>.
     </p>
     <ul class="info-list">
-        <li>Formulář je zcela <strong>anonymní</strong> — neukládáme vaši IP adresu, nepoužíváme cookies ani jiné sledovací technologie.</li>
+        <li>Aplikace <strong>nezjišťuje ani neukládá vaši IP adresu</strong>, nepoužívá cookies ani jiné sledovací technologie. Provozovatel webového serveru ale může běžně zaznamenávat technické přístupové záznamy — viz „Podrobněji o anonymitě“.</li>
         <li>Jméno, telefon a e-mail jsou <strong>zcela dobrovolné</strong>. Uveďte je jen tehdy, chcete-li být kontaktováni ohledně dalšího šetření.</li>
         <li>Aby byla anonymita důvěryhodná, je zdrojový kód této aplikace veřejně k nahlédnutí<?php if (GITHUB_REPO_URL !== ''): ?> na
             <a href="<?= e(GITHUB_REPO_URL) ?>" target="_blank" rel="noopener noreferrer">GitHubu</a><?php endif; ?> —
@@ -238,7 +269,7 @@ $captcha = captcha_generate();
         <div class="info-details-body">
             <h3>Jak zajišťujeme anonymitu</h3>
             <ul class="info-list">
-                <li>Stránka <strong>nepoužívá cookies ani přihlašování</strong> a nikde si neukládá vaši IP adresu — technicky tedy nejde zjistit, kdo formulář odeslal, pokud to sami neuvedete v kontaktních údajích.</li>
+                <li>Stránka <strong>nepoužívá cookies ani přihlašování</strong> a aplikace si neukládá vaši IP adresu (ani její hash). Součástí hlášení tak není nic, podle čeho by šlo odesílatele určit, pokud to sami neuvedete v textu nebo v kontaktních údajích.</li>
                 <li>Nic se nenačítá z cizích serverů (žádné reklamní ani sledovací skripty, ani třeba běžné písmo z Google) — i to by mohlo prozradit, že jste stránku navštívili.</li>
                 <li>Stránka nepoužívá žádný JavaScript. Menší plocha pro chyby a nic se neděje „potichu" na pozadí mimo samotné odeslání formuláře.</li>
                 <li>Odkaz na tento web nikam „neprosakuje" — když kliknete na odkaz na GitHub, cílová stránka se nedozví, že jste přišli odsud.</li>
@@ -246,14 +277,16 @@ $captcha = captcha_generate();
             <h3>Jak formulář chráníme před zneužitím</h3>
             <ul class="info-list">
                 <li>Proti spamu používáme jen vlastní jednoduché mechanismy (skryté pole pro roboty, časová kontrola, ověřovací otázka) — žádnou cizí captcha službu, která by mohla sledovat návštěvníky.</li>
-                <li>Počet hlášení z jedné sítě je mírně omezen, aby formulář nešlo zahltit. Toto omezení se neváže na obsah žádné zprávy.</li>
+                <li>Počet hlášení je omezen jen <strong>celkově za hodinu pro celý formulář</strong>, aby ho nešlo zahltit. Formulář si o jednotlivých návštěvnících nic nepamatuje a omezení se neváže na obsah žádné zprávy.</li>
                 <li>Text hlášení se do e-mailu vkládá bezpečně, takže ho nelze zneužít k manipulaci s odesílaným e-mailem.</li>
             </ul>
             <h3>Co pro vlastní bezpečí můžete udělat vy</h3>
             <ul class="info-list">
                 <li>Obsah hlášení může nechtěně prozradit vaši identitu (styl psaní, konkrétní detaily) — technická ochrana toto nevyřeší, zvažte proto sami, co je bezpečné napsat.</li>
                 <li>Pokud chcete nejvyšší možnou anonymitu, zvažte odeslání z jiné než školní sítě.</li>
-                <li>Provozovatel serveru (hosting) může technicky vidět běžné přístupové záznamy webserveru — to už tato aplikace neřídí.</li>
+                <li>Provozovatel serveru (hosting) může technicky vidět běžné přístupové záznamy webserveru (IP adresa a čas přístupu) — to tato aplikace neřídí. Také provozovatel vaší sítě (např. školní síť) může vidět, že jste tuto stránku navštívili.</li>
+                <li>E-mail s hlášením neobsahuje přesný čas odeslání (je zaokrouhlen na celou hodinu) ani jméno serveru.</li>
+                <li>Hlášení se odesílá vždy jen na adresu <?= e(REPORT_TO_EMAIL) ?> ze schránky <?= e(SMTP_FROM) ?> přes server <?= e(SMTP_HOST) ?><?php if (GITHUB_REPO_URL !== ''): ?>; toto nastavení je veřejné v souboru <a href="<?= e(GITHUB_REPO_URL) ?>/blob/main/config.public.php" target="_blank" rel="noopener noreferrer">config.public.php</a><?php endif; ?>.</li>
             </ul>
             <p class="muted">
                 Celý zdrojový kód aplikace, včetně těchto bezpečnostních opatření, je veřejně k nahlédnutí<?php if (GITHUB_REPO_URL !== ''): ?>
@@ -296,6 +329,7 @@ $captcha = captcha_generate();
         <input type="hidden" name="num1" value="<?= (int) $captcha['num1'] ?>">
         <input type="hidden" name="num2" value="<?= (int) $captcha['num2'] ?>">
         <input type="hidden" name="ts" value="<?= (int) $captcha['ts'] ?>">
+        <input type="hidden" name="nonce" value="<?= e($captcha['nonce']) ?>">
         <input type="hidden" name="sig" value="<?= e($captcha['sig']) ?>">
 
         <div class="form-group">

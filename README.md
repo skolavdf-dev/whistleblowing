@@ -94,21 +94,23 @@ Toto je jádro důvěryhodnosti celého nástroje, proto je rozepsané podrobně
 - **Žádná session, žádné cookies.** Aplikace nikde nevolá `session_start()`
   ani `setcookie()`. Bez session nelze požadavky napříč návštěvami mezi
   sebou provázat.
-- **Anti-spam captcha je bezstavová.** Místo uložení očekávané odpovědi do
-  session je celá „úloha" (dvě čísla + čas + HMAC podpis) zakódovaná přímo
-  ve skrytých polích formuláře (`captcha_generate()` /
+- **Anti-spam captcha je bezstavová a jednorázová.** Místo uložení očekávané
+  odpovědi do session je celá „úloha" (dvě čísla + čas + náhodný nonce + HMAC
+  podpis) zakódovaná přímo ve skrytých polích formuláře (`captcha_generate()` /
   `captcha_verify()` v [includes/helpers.php](includes/helpers.php)).
   Podpis (`hash_hmac('sha256', …, APP_SECRET)`) zaručuje, že hodnoty nejde
-  zfalšovat bez znalosti tajného klíče ze serveru, a přitom nevyžaduje
-  žádné úložiště na straně serveru.
-- **IP adresa se nikde neloguje.** Jediné místo, kde s ní aplikace vůbec
-  pracuje, je jemný rate limiter (`check_rate_limit()`). I tam se IP nikdy
-  neukládá v čitelné podobě — použije se `substr(hash_hmac('sha256', $ip,
-  APP_SECRET), 0, 24)` jako název dočasného souboru, jehož obsah je jen
-  `{"start": …, "count": …}`. Z tohoto hashe nejde IP adresu zpětně
-  odvodit (je solený tajným klíčem) a soubor navíc sám vyprší
-  (`RATE_LIMIT_WINDOW`, výchozí 1 hodina). Nikde se neváže na obsah
-  konkrétní zprávy.
+  zfalšovat. Po použití se token zneplatní (`captcha_consume()`): ukládá se
+  jen zkrácený hash podpisu a čas vypršení zaokrouhlený na celou hodinu —
+  žádná IP, žádný obsah, žádný přesný čas odeslání.
+- **S IP adresou aplikace nepracuje vůbec.** Nelogují se, neukládá se ani její
+  hash. Rate limit je **jediné globální počítadlo** (`storage/ratelimit.json`:
+  začátek hodiny + počet hlášení za hodinu) — nerozlišuje odesílatele, takže
+  nemůže být použito k jejich identifikaci ani časové korelaci (dřívější verze
+  1.0.0 ukládala per-IP hash a ten tuto vlastnost neměla).
+- **Metadata e-mailu jsou minimalizovaná** (`harden_mail()`): hlavička `Date`
+  je zaokrouhlena na začátek hodiny, `Message-ID`/HELO používají doménu
+  odesílatele místo jména serveru a `X-Mailer` (verze PHPMailer) se neposílá.
+  Bez toho by přesný čas e-mailu šel spárovat s přístupovým logem webserveru.
 - **Žádné požadavky na třetí strany.** Písmo Raleway je stažené a uložené
   lokálně v [assets/fonts/](assets/fonts/) místo načítání z
   `fonts.googleapis.com` / `fonts.gstatic.com` — jinak by prohlížeč
@@ -205,19 +207,20 @@ službu typu reCAPTCHA:
 1. **Honeypot** — skryté pole `company` (CSS `position: absolute; left:
    -9999px`, `aria-hidden="true"`, `tabindex="-1"`). Člověk ho nikdy
    nevidí ani se do něj neprotabuluje, ale jednoduší boti ho běžně
-   vyplní. Pokud přijde vyplněné, aplikace předstírá úspěch (`$sent =
-   true`), ale **e-mail se fakticky neodešle** — bot tak nezjistí, že byl
+   vyplní. Pokud přijde vyplněné, aplikace předstírá úspěch (přesměruje
+   na stránku „odesláno"), ale **e-mail se fakticky neodešle** — bot tak nezjistí, že byl
    odhalen, a nezkouší to jinak.
 2. **Stateless HMAC captcha** — viz kapitola Anonymita výše. Kromě
-   ověření správné odpovědi kontroluje i stáří tokenu
-   (`CAPTCHA_MIN_SECONDS` = 3 s, `CAPTCHA_MAX_SECONDS` = 3600 s) — příliš
-   rychlé odeslání prozradí automat, příliš staré odmítne jako replay.
-3. **Rate limit** dle soleného hashe IP adresy — výchozí limit 5 hlášení
-   za hodinu (`RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW` v
-   [config.php](config.php)). Implementace je „fail-open": pokud dočasné
-   úložiště selže (např. špatná oprávnění na hostingu), radši propustí
-   požadavek, než aby zablokovala skutečného oznamovatele. Lze úplně
-   vypnout (`rate_limit_enabled => false` v `config.local.php`).
+   ověření správné odpovědi kontroluje stáří tokenu
+   (`CAPTCHA_MIN_SECONDS` = 3 s, `CAPTCHA_MAX_SECONDS` = 3600 s) a to, že
+   token nebyl už použit.
+3. **Globální rate limit** — výchozí 30 hlášení za hodinu pro celý formulář
+   (`RATE_LIMIT_MAX` v [config.php](config.php)), bez vazby na IP adresu.
+   Započítávají se jen hlášení, která by se opravdu odeslala (chybné pokusy a
+   boti limit nevyčerpají). Implementace je „fail-open": pokud dočasné úložiště
+   selže (např. špatná oprávnění), radši propustí požadavek, než aby
+   zablokovala skutečného oznamovatele. Lze vypnout (`rate_limit_enabled =>
+   false`).
 
 ### 4.4 Ochrana proti injection útokům
 
@@ -256,9 +259,11 @@ službu typu reCAPTCHA:
 Výjimka z PHPMaileru (`PHPMailerException`) se zachytává a návštěvníkovi
 se ukáže jen obecná zpráva „Odeslání se bohužel nezdařilo." — detaily
 SMTP chyby (které by mohly prozradit interní infrastrukturu) se
-nezobrazují. Zvažte logování těchto výjimek na serverové straně (do
-běžného PHP error logu, bez obsahu zprávy) pro monitoring dostupnosti
-SMTP.
+nezobrazují. Do PHP error logu se zapíše jen obecná zpráva
+`whistleblowing: odeslání e-mailu selhalo (…)` — bez IP a bez obsahu
+hlášení — aby se správce dozvěděl, že hlášení nedoputovala. Po úspěšném
+odeslání aplikace přesměruje (HTTP 303) na `?odeslano`, takže obnovení
+stránky neodešle hlášení podruhé.
 
 ---
 
@@ -311,9 +316,25 @@ a otevřete `http://localhost:8090`.
   certifikát, dočasně zakomentujte blok „Vynucení HTTPS" v
   [.htaccess](.htaccess), jinak by byla stránka nedostupná.
 - Adresář `storage/` musí být zapisovatelný pro webserver (slouží jen pro
-  dočasné soubory rate limiteru, ne pro obsah zpráv).
+  globální počítadlo a seznam použitých captcha tokenů, ne pro obsah zpráv).
+  Nejlépe ho (`storage_dir`) i `config.local.php` (proměnná prostředí
+  `WB_CONFIG`) umístěte mimo DocumentRoot.
+- Na server nahrávejte jen to, co aplikace potřebuje: `index.php`,
+  `config.php`, `includes/`, `templates/`, `assets/`, `vendor/`, `storage/`,
+  `favicon.ico`, `.htaccess`, `.user.ini`. Ne `README.md`, `CHANGELOG.md`,
+  `composer.*`, `.git*`.
+- `.user.ini` omezuje velikost požadavku na 64 kB a vypíná uploady.
+- Doporučeno: vypnout nebo anonymizovat přístupové logy webserveru pro cestu
+  k formuláři (IIS: `httpLogging dontLog`, Apache: podmíněný `CustomLog`).
+  Pokud to hosting neumožní, upravte text na stránce tak, aby to
+  odpovídalo skutečnosti.
 - Ověřte, že doména má nastavené SPF/DKIM/DMARC pro odchozí SMTP doménu —
   jinak mohou zprávy končit ve spamu příjemce.
+- Konfigurace má dvě vrstvy: [config.public.php](config.public.php) (v gitu:
+  adresát, odesílatel, SMTP server — nic tajného) a `config.local.php` (mimo
+  git: `app_secret`, `smtp_pass`, volitelně `smtp_user`). Local nesmí přepsat
+  veřejné hodnoty, jinak se aplikace nespustí. Návštěvník tak v repozitáři
+  vidí, kam hlášení jdou a odkud se odesílají.
 - Před commitem/publikací zkontrolujte, že `config.local.php` skutečně
   není v gitu (`git status` by ho neměl vidět).
 
@@ -334,10 +355,10 @@ Pro upřímnost k uživatelům formuláře i k budoucím auditorům kódu:
 - **Obsah samotné zprávy** může nechtěně prozradit identitu (styl psaní,
   konkrétní detaily, které zná málokdo). To žádná technická ochrana
   nevyřeší — je na autorovi hlášení, co považuje za bezpečné napsat.
-- **Rate limit dle IP** je kompromis: bez jakéhokoliv omezení by šel
-  formulář snadno zahltit; s omezením dle IP existuje teoretická situace,
-  kdy více lidí za NAT (např. školní síť) sdílí limit. Proto je nastavený
-  velkoryse a lze ho v konfiguraci vypnout.
+- **Globální rate limit** je kompromis: formulář nejde snadno zahltit, ale
+  při vyčerpání limitu (30/hod.) se musí počkat do další hodiny. Limit
+  je záměrně bez vazby na IP, aby neprozrazoval odesílatele a neškodil
+  uživatelům za společnou adresou (škola, Tor).
 
 ---
 
