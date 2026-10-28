@@ -7,6 +7,7 @@
 # Dočasná úložiště (rate limit apod.)
 /storage/*
 !/storage/.gitkeep
+!/storage/.htaccess
 
 # OS / editor
 .DS_Store
