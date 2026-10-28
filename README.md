@@ -59,15 +59,16 @@ Klíčové soubory:
 | Soubor | Účel |
 |---|---|
 | [index.php](index.php) | Celá aplikační logika + HTML formulář |
-| [config.php](config.php) | Výchozí konfigurace, definuje konstanty |
+| [config.php](config.php) | Načte konfiguraci a definuje konstanty |
+| [config.public.php](config.public.php) | Veřejná konfigurace: adresát hlášení, odesílatel, SMTP server (nic tajného) |
 | `config.local.php` | Lokální tajné hodnoty (SMTP heslo, HMAC klíč) — **není v gitu** |
 | [includes/helpers.php](includes/helpers.php) | `e()`, anti-spam captcha, rate limit, čištění vstupu |
 | [templates/mail.html](templates/mail.html) | HTML šablona odesílaného e-mailu |
 | [assets/css/style.css](assets/css/style.css) | Vzhled dle design systému školy |
 | [assets/fonts/](assets/fonts/) | Self-hostované písmo Raleway |
-| [storage/ratelimit/](storage/) | Dočasné soubory rate limiteru (auto-expirují) |
+| [storage/](storage/) | Zapisovatelné úložiště: globální počítadlo (`ratelimit.json`) a použité captcha tokeny (`captcha-used.json`) — bez IP a bez obsahu hlášení |
 | [.htaccess](.htaccess) | Apache: HTTPS redirect, blokace `vendor/`, config souborů a dotfiles, hlavičky pro statické soubory |
-| [includes/.htaccess](includes/.htaccess), [templates/.htaccess](templates/.htaccess), [storage/.htaccess](storage/.htaccess), [.claude/.htaccess](.claude/.htaccess) | Úplná blokace webového přístupu k danému adresáři |
+| [includes/.htaccess](includes/.htaccess), [templates/.htaccess](templates/.htaccess), [storage/.htaccess](storage/.htaccess) | Úplná blokace webového přístupu k danému adresáři |
 
 Závislosti: jediná — [PHPMailer](https://github.com/PHPMailer/PHPMailer)
 přes Composer, pro odesílání e-mailu přes autentizované SMTP.
@@ -182,8 +183,8 @@ aplikační hlavičky:
   `<FilesMatch "^\.">`.
 - **Úplná blokace adresářů**, které nemají být dostupné přes web —
   vlastní `.htaccess` v [includes/](includes/.htaccess),
-  [templates/](templates/.htaccess), [storage/](storage/.htaccess) a
-  [.claude/](.claude/.htaccess) (dev nástroje). `vendor/` (generovaný
+  [templates/](templates/.htaccess) a [storage/](storage/.htaccess).
+  `vendor/` (generovaný
   composerem, není v gitu, takže nemůže mít vlastní `.htaccess`, jinak by
   se ztrácel při každém `composer install`) blokuje centrálně pravidlo
   `RewriteRule ^vendor/ - [F,L]` v kořenovém souboru.
@@ -276,18 +277,27 @@ composer install
 cp config.local.example.php config.local.php
 ```
 
-V `config.local.php` doplňte:
+Konfigurace má dvě vrstvy. Veřejné hodnoty upravte v [config.public.php](config.public.php):
 
 | Klíč | Popis |
 |---|---|
-| `app_secret` | Náhodný tajný řetězec pro podpis anti-spam tokenů a rate-limit hashů. Vygenerujte např. `php -r "echo bin2hex(random_bytes(32));"` |
 | `report_to` | E-mail, na který se mají hlášení posílat |
+| `smtp_from`, `smtp_from_name` | Odesílatel e-mailu |
+| `smtp_host`, `smtp_port`, `smtp_secure` | SMTP server |
 | `github_url` | Odkaz na tento repozitář (zobrazuje se na stránce kvůli transparentnosti) |
-| `smtp_host`, `smtp_port`, `smtp_user`, `smtp_pass`, `smtp_from`, `smtp_from_name`, `smtp_secure` | Přístup k SMTP serveru |
-| `rate_limit_enabled`, `rate_limit_max`, `rate_limit_window` | Volitelné přepsání výchozích limitů z [config.php](config.php) |
+
+Tajné hodnoty patří do `config.local.php` (jen tyto, jinak se aplikace nespustí):
+
+| Klíč | Popis |
+|---|---|
+| `app_secret` | Náhodný tajný řetězec pro podpis anti-spam tokenů. Vygenerujte např. `php -r "echo bin2hex(random_bytes(32));"` |
+| `smtp_pass` | Heslo k SMTP |
+| `smtp_user` | Volitelné — pokud se liší od `smtp_from` |
+| `storage_dir`, `rate_limit_enabled`, `rate_limit_max` | Volitelné provozní nastavení (výchozí hodnoty viz [config.php](config.php)) |
 
 `config.local.php` obsahuje citlivé údaje a je v `.gitignore` — **nikdy
-ho necommitujte**.
+ho necommitujte**. `config.local.php` nesmí obsahovat klíče z
+`config.public.php`: aplikace by se odmítla spustit.
 
 ### Lokální spuštění
 
